@@ -128,17 +128,21 @@ public abstract class AbstractOpcodeTracer {
         }
     }
 
+    // Advances the sequential action pointer and returns the revert reason for the current system
+    // contract call, or null when the call succeeded or there are no more actions.
     protected final String getRevertReasonFromContractActions(final ContractCallContext context) {
-        final var contractActions = context.getOpcodeContext().getActions();
+        final var opcodeContext = context.getOpcodeContext();
+        final var contractActions = opcodeContext.getActions();
+        final var currentIndex = opcodeContext.getActionIndex();
+        opcodeContext.setActionIndex(currentIndex + 1);
 
-        if (CollectionUtils.isEmpty(contractActions)) {
+        if (CollectionUtils.isEmpty(contractActions) || currentIndex >= contractActions.size()) {
             return null;
         }
 
-        for (var action : contractActions) {
-            if (action.hasRevertReason()) {
-                return formatRevertReason(action.getResultData());
-            }
+        final var action = contractActions.get(currentIndex);
+        if (action.hasRevertReason()) {
+            return formatRevertReason(action.getResultData());
         }
         return null;
     }

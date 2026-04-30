@@ -23,6 +23,8 @@ public final class OpcodeContext {
     @Builder.Default
     private List<ContractAction> actions = List.of();
 
+    private int actionIndex;
+
     private List<Opcode> opcodes;
 
     private long gasRemaining;

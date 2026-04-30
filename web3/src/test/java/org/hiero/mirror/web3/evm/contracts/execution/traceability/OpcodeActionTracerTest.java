@@ -478,12 +478,10 @@ class OpcodeActionTracerTest {
     @DisplayName("should return ABI-encoded revert reason for precompile call with plaintext revert reason")
     void shouldReturnAbiEncodedRevertReasonWhenPrecompileCallHasContractActionWithPlaintextRevertReason() {
         // Given
-        final var contractActionNoRevert = getContractActionNoRevert();
         final var contractActionWithRevert = getContractActionWithRevert();
         contractActionWithRevert.setResultData("revert reason".getBytes());
 
-        frame = setupInitialFrame(
-                opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionNoRevert, contractActionWithRevert);
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionWithRevert);
 
         // When
         final Opcode opcode = executeOperation(frame);
@@ -504,14 +502,12 @@ class OpcodeActionTracerTest {
     @DisplayName("should return ABI-encoded revert reason for precompile call with response code for revert reason")
     void shouldReturnAbiEncodedRevertReasonWhenPrecompileCallHasContractActionWithResponseCodeNumberRevertReason() {
         // Given
-        final var contractActionNoRevert = getContractActionNoRevert();
         final var contractActionWithRevert = getContractActionWithRevert();
         contractActionWithRevert.setResultData(ByteBuffer.allocate(32)
                 .putInt(28, ResponseCodeEnum.INVALID_ACCOUNT_ID.getNumber())
                 .array());
 
-        frame = setupInitialFrame(
-                opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionNoRevert, contractActionWithRevert);
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionWithRevert);
 
         // When
         final Opcode opcode = executeOperation(frame);
@@ -533,15 +529,13 @@ class OpcodeActionTracerTest {
     @DisplayName("should return ABI-encoded revert reason for precompile call with ABI-encoded revert reason")
     void shouldReturnAbiEncodedRevertReasonWhenPrecompileCallHasContractActionWithAbiEncodedRevertReason() {
         // Given
-        final var contractActionNoRevert = getContractActionNoRevert();
         final var contractActionWithRevert =
-                contractAction(1, 1, CallOperationType.OP_CALL, REVERT_REASON.getNumber(), HTS_PRECOMPILE_ADDRESS);
+                contractAction(0, 1, CallOperationType.OP_CALL, REVERT_REASON.getNumber(), HTS_PRECOMPILE_ADDRESS);
         contractActionWithRevert.setResultData(Bytes.fromHexString(getAbiEncodedRevertReason(
                         new String(INVALID_OPERATION.name().getBytes())))
                 .toArray());
 
-        frame = setupInitialFrame(
-                opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionNoRevert, contractActionWithRevert);
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionWithRevert);
 
         // When
         final Opcode opcode = executeOperation(frame);
@@ -562,12 +556,10 @@ class OpcodeActionTracerTest {
     @DisplayName("should return empty revert reason of precompile call with empty revert reason")
     void shouldReturnEmptyReasonWhenPrecompileCallHasContractActionWithEmptyRevertReason() {
         // Given
-        final var contractActionNoRevert = getContractActionNoRevert();
         final var contractActionWithRevert = getContractActionWithRevert();
         contractActionWithRevert.setResultData(Bytes.EMPTY.toArray());
 
-        frame = setupInitialFrame(
-                opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionNoRevert, contractActionWithRevert);
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, contractActionWithRevert);
 
         // When
         final Opcode opcode = executeOperation(frame);
@@ -580,6 +572,83 @@ class OpcodeActionTracerTest {
 
         // Then
         assertThat(opcodeForPrecompileCall.getReason()).isNotNull().isEqualTo(Bytes.EMPTY.toHexString());
+    }
+
+    @Test
+    @DisplayName("should return null revert reason when system contract call succeeds")
+    void shouldReturnNullRevertReasonWhenSystemCallSucceeds() {
+        // Given - action with no revert reason (successful call) at pointer position 0
+        final var successAction =
+                contractAction(0, 1, CallOperationType.OP_CALL, OUTPUT.getNumber(), HTS_PRECOMPILE_ADDRESS);
+
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, successAction);
+
+        final var frameOfPrecompileCall = buildMessageFrameFromAction(successAction);
+        frame = setupFrame(frameOfPrecompileCall);
+
+        // When
+        final Opcode opcode = executePrecompileOperation(frame, GAS_REQUIREMENT, DEFAULT_OUTPUT);
+
+        // Then
+        assertThat(opcode.getReason()).isNull();
+    }
+
+    @Test
+    @DisplayName("should assign distinct revert reasons to each of multiple failed system calls")
+    void shouldAssignCorrectRevertReasonToEachOfMultipleFailedSystemCalls() {
+        // Given - two failed actions in sequential order
+        final var action1 =
+                contractAction(0, 1, CallOperationType.OP_CALL, REVERT_REASON.getNumber(), HTS_PRECOMPILE_ADDRESS);
+        action1.setResultData("revert reason 1".getBytes());
+        final var action2 =
+                contractAction(1, 1, CallOperationType.OP_CALL, REVERT_REASON.getNumber(), HTS_PRECOMPILE_ADDRESS);
+        action2.setResultData("revert reason 2".getBytes());
+
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, action1, action2);
+
+        // When - first system call
+        frame = setupFrame(buildMessageFrameFromAction(action1));
+        final Opcode firstOpcode = executePrecompileOperation(frame, GAS_REQUIREMENT, DEFAULT_OUTPUT);
+
+        // second system call
+        frame = setupFrame(buildMessageFrameFromAction(action2));
+        final Opcode secondOpcode = executePrecompileOperation(frame, GAS_REQUIREMENT, DEFAULT_OUTPUT);
+
+        // Then
+        assertThat(firstOpcode.getReason())
+                .isNotEmpty()
+                .isEqualTo(getAbiEncodedRevertReason(new String(action1.getResultData())));
+        assertThat(secondOpcode.getReason())
+                .isNotEmpty()
+                .isEqualTo(getAbiEncodedRevertReason(new String(action2.getResultData())));
+        assertThat(firstOpcode.getReason()).isNotEqualTo(secondOpcode.getReason());
+    }
+
+    @Test
+    @DisplayName("should return null for a successful system call and the correct reason for a subsequent failed one")
+    void shouldReturnNullForSuccessAndCorrectReasonForSubsequentFailure() {
+        // Given - success action at pointer 0, failure action at pointer 1
+        final var successAction =
+                contractAction(0, 1, CallOperationType.OP_CALL, OUTPUT.getNumber(), HTS_PRECOMPILE_ADDRESS);
+        final var failAction =
+                contractAction(1, 1, CallOperationType.OP_CALL, REVERT_REASON.getNumber(), HTS_PRECOMPILE_ADDRESS);
+        failAction.setResultData("revert reason".getBytes());
+
+        frame = setupInitialFrame(opcodeContext, CONTRACT_ADDRESS, MESSAGE_CALL, successAction, failAction);
+
+        // When - first system call (succeeds, pointer advances past successAction)
+        frame = setupFrame(buildMessageFrameFromAction(successAction));
+        final Opcode firstOpcode = executePrecompileOperation(frame, GAS_REQUIREMENT, DEFAULT_OUTPUT);
+
+        // second system call (fails, pointer advances past failAction)
+        frame = setupFrame(buildMessageFrameFromAction(failAction));
+        final Opcode secondOpcode = executePrecompileOperation(frame, GAS_REQUIREMENT, DEFAULT_OUTPUT);
+
+        // Then
+        assertThat(firstOpcode.getReason()).isNull();
+        assertThat(secondOpcode.getReason())
+                .isNotEmpty()
+                .isEqualTo(getAbiEncodedRevertReason(new String(failAction.getResultData())));
     }
 
     @Test
@@ -813,10 +882,6 @@ class OpcodeActionTracerTest {
                 .blockValues(mock(BlockValues.class))
                 .blockHashLookup((ignored, gas) -> Hash.wrap(Bytes32.ZERO))
                 .contextVariables(Map.of(ContractCallContext.CONTEXT_NAME, contractCallContext));
-    }
-
-    private ContractAction getContractActionNoRevert() {
-        return contractAction(0, 0, CallOperationType.OP_CREATE, OUTPUT.getNumber(), CONTRACT_ADDRESS);
     }
 
     private ContractAction getContractActionWithRevert() {

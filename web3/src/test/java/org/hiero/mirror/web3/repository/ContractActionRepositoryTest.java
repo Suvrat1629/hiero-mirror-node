@@ -2,6 +2,7 @@
 
 package org.hiero.mirror.web3.repository;
 
+import static com.hedera.services.stream.proto.ContractAction.ResultDataCase.OUTPUT;
 import static com.hedera.services.stream.proto.ContractAction.ResultDataCase.REVERT_REASON;
 import static com.hedera.services.stream.proto.ContractActionType.SYSTEM;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,7 +28,7 @@ class ContractActionRepositoryTest extends Web3IntegrationTest {
                         .contractAction()
                         .customize(action -> action.consensusTimestamp(timestamp))
                         .persist());
-        final var failedSystemActions = List.of(
+        final var systemActions = List.of(
                 domainBuilder
                         .contractAction()
                         .customize(action -> action.callType(SYSTEM.getNumber())
@@ -38,11 +39,11 @@ class ContractActionRepositoryTest extends Web3IntegrationTest {
                         .contractAction()
                         .customize(action -> action.callType(SYSTEM.getNumber())
                                 .consensusTimestamp(timestamp)
-                                .resultDataType(REVERT_REASON.getNumber()))
+                                .resultDataType(OUTPUT.getNumber()))
                         .persist());
 
-        assertThat(contractActionRepository.findFailedSystemActionsByConsensusTimestamp(timestamp))
-                .containsExactlyElementsOf(failedSystemActions)
+        assertThat(contractActionRepository.findSystemActionsByConsensusTimestamp(timestamp))
+                .containsExactlyElementsOf(systemActions)
                 .doesNotContainAnyElementsOf(otherActions);
     }
 }
