@@ -97,8 +97,12 @@ public abstract class BaseContractFeature extends AbstractFeature {
     }
 
     protected String verifyContractExecutionResultsByTransactionId() {
-        final var contractResult = mirrorClient.getContractResultByTransactionId(
-                networkTransactionResponse.getTransactionIdStringNoCheckSum());
+        final var transactionId = networkTransactionResponse.getTransactionIdStringNoCheckSum();
+        final var contractResult = mirrorClient.getContractResultByTransactionId(transactionId);
+
+        if (acceptanceTestProperties.isSkipEntitiesCleanup()) {
+            System.out.println("TRANSACTION_ID=" + transactionId);
+        }
 
         verifyContractExecutionResults(contractResult);
         assertThat(contractResult.getBlockHash()).isNotBlank();
