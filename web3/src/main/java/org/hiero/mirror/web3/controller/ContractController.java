@@ -41,8 +41,8 @@ class ContractController {
             validateContractMaxGasLimit(request);
 
             final var params = constructServiceParameters(request);
-            final var result = contractExecutionService.processCall(params);
-            return new ContractCallResponse(result);
+            final var executionResult = contractExecutionService.processCallWithGas(params);
+            return new ContractCallResponse(executionResult.result(), executionResult.gasUsed());
         } catch (InvalidParametersException e) {
             // The validation failed, but no processing occurred so restore the consumed tokens.
             throttleManager.restore(request.getGas());

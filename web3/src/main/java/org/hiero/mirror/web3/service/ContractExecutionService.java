@@ -6,12 +6,14 @@ import com.google.common.base.Stopwatch;
 import com.hederahashgraph.api.proto.java.ResponseCodeEnum;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.inject.Named;
+import java.math.BigInteger;
 import java.util.Objects;
 import lombok.CustomLog;
 import org.apache.tuweni.bytes.Bytes;
 import org.hiero.mirror.web3.common.ContractCallContext;
 import org.hiero.mirror.web3.evm.properties.EvmProperties;
 import org.hiero.mirror.web3.service.model.ContractExecutionParameters;
+import org.hiero.mirror.web3.service.model.ContractExecutionResult;
 import org.hiero.mirror.web3.service.utils.BinaryGasEstimator;
 import org.hiero.mirror.web3.throttle.ThrottleManager;
 import org.hiero.mirror.web3.throttle.ThrottleProperties;
@@ -41,10 +43,21 @@ public class ContractExecutionService extends ContractCallService {
         this.binaryGasEstimator = binaryGasEstimator;
     }
 
+    /**
+     * Backwards compatible method returning only the result hex string.
+     */
     public String processCall(final ContractExecutionParameters params) {
+        return processCallWithGas(params).result();
+    }
+
+    /**
+     * New API that returns both the result and the actual gas used by the execution.
+     */
+    public ContractExecutionResult processCallWithGas(final ContractExecutionParameters params) {
         return ContractCallContext.run(ctx -> {
             var stopwatch = Stopwatch.createStarted();
             var stringResult = "";
+            long gasUsed = 0L;
 
             try {
                 updateGasLimitMetric(params);
@@ -56,14 +69,24 @@ public class ContractExecutionService extends ContractCallService {
                     final var ethCallTxnResult = callContract(params, ctx);
                     result = Objects.requireNonNullElse(
                             Bytes.fromHexString(ethCallTxnResult.contractCallResult()), Bytes.EMPTY);
+                    gasUsed = ethCallTxnResult.gasUsed();
                 }
 
                 stringResult = result.toHexString();
+
+                if (params.isEstimate()) {
+                    // estimateGas returned the estimated gas as an unsigned long encoded in hex payload
+                    if (stringResult != null && stringResult.startsWith("0x") && stringResult.length() > 2) {
+                        gasUsed = new BigInteger(stringResult.substring(2), 16).longValue();
+                    } else {
+                        gasUsed = 0L;
+                    }
+                }
             } finally {
                 log.debug("Processed request {} in {}: {}", params, stopwatch, stringResult);
             }
 
-            return stringResult;
+            return new ContractExecutionResult(stringResult, gasUsed);
         });
     }
 

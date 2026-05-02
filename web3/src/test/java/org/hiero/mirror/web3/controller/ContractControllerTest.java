@@ -38,6 +38,7 @@ import org.hiero.mirror.web3.exception.InvalidParametersException;
 import org.hiero.mirror.web3.exception.MirrorEvmTransactionException;
 import org.hiero.mirror.web3.exception.ThrottleException;
 import org.hiero.mirror.web3.service.ContractExecutionService;
+import org.hiero.mirror.web3.service.model.ContractExecutionResult;
 import org.hiero.mirror.web3.throttle.ThrottleManager;
 import org.hiero.mirror.web3.throttle.ThrottleProperties;
 import org.hiero.mirror.web3.viewmodel.BlockType;
@@ -101,6 +102,7 @@ class ContractControllerTest {
     @BeforeEach
     void setUp() {
         throttleManager.throttle(any(ContractCallRequest.class));
+        given(service.processCallWithGas(any())).willReturn(new ContractExecutionResult("0x", 0L));
     }
 
     @SneakyThrows
@@ -218,7 +220,7 @@ class ContractControllerTest {
         final var exceptionMessage = "No such contract or token";
         final var request = request();
 
-        given(service.processCall(any())).willThrow(new EntityNotFoundException(exceptionMessage));
+        given(service.processCallWithGas(any())).willThrow(new EntityNotFoundException(exceptionMessage));
 
         contractCall(request)
                 .andExpect(status().isNotFound())
@@ -290,7 +292,7 @@ class ContractControllerTest {
                 .andExpect(status().isOk());
 
         // Verify that the value field defaults to 0 when explicitly set to null
-        verify(service).processCall(argThat(params -> params.getValue() == 0L));
+        verify(service).processCallWithGas(argThat(params -> params.getValue() == 0L));
     }
 
     @Test
@@ -330,7 +332,7 @@ class ContractControllerTest {
         final var request = request();
         request.setData("0xa26388bb");
 
-        given(service.processCall(any()))
+        given(service.processCallWithGas(any()))
                 .willThrow(new MirrorEvmTransactionException(
                         CONTRACT_REVERT_EXECUTED, detailedErrorMessage, hexDataErrorMessage));
 
@@ -346,7 +348,7 @@ class ContractControllerTest {
         final var error = "No such contract or token";
         final var request = request();
 
-        given(service.processCall(any())).willThrow(new InvalidParametersException(error));
+        given(service.processCallWithGas(any())).willThrow(new InvalidParametersException(error));
         contractCall(request)
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(convert(new GenericErrorResponse(BAD_REQUEST.getReasonPhrase(), error))));
@@ -356,7 +358,7 @@ class ContractControllerTest {
     void callWithNotSupportedPrecompile() throws Exception {
         final var request = request();
 
-        given(service.processCall(any())).willThrow(new PrecompileNotSupportedException(StringUtils.EMPTY));
+        given(service.processCallWithGas(any())).willThrow(new PrecompileNotSupportedException(StringUtils.EMPTY));
         contractCall(request)
                 .andExpect(status().isNotImplemented())
                 .andExpect(content()
@@ -410,7 +412,7 @@ class ContractControllerTest {
     @Test
     void callWithBlockNumberNotFoundExceptionTest() throws Exception {
         final var request = request();
-        given(service.processCall(any())).willThrow(new BlockNumberNotFoundException());
+        given(service.processCallWithGas(any())).willThrow(new BlockNumberNotFoundException());
 
         contractCall(request)
                 .andExpect(status().isBadRequest())
@@ -425,7 +427,7 @@ class ContractControllerTest {
         final var request = request();
         request.setData("0xa26388bb");
 
-        given(service.processCall(any())).willThrow(new MirrorEvmTransactionException(responseCode, null, null));
+        given(service.processCallWithGas(any())).willThrow(new MirrorEvmTransactionException(responseCode, null, null));
 
         contractCall(request)
                 .andExpect(status().isInternalServerError())
@@ -524,7 +526,7 @@ class ContractControllerTest {
     @SneakyThrows
     void handlesQueryTimeoutException(CapturedOutput capturedOutput) {
         final var request = request();
-        given(service.processCall(any())).willThrow(new QueryTimeoutException("Query timeout"));
+        given(service.processCallWithGas(any())).willThrow(new QueryTimeoutException("Query timeout"));
 
         contractCall(request)
                 .andExpect(status().isServiceUnavailable())
